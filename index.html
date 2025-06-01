@@ -136,6 +136,26 @@
         .message-box.hidden {
             display: none;
         }
+
+        /* New style for centered admin confirmation modal content */
+        .admin-confirm-modal-content {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+            width: 90%;
+            max-width: 350px; /* Smaller width */
+            position: absolute; /* Position absolutely within the overlay */
+            left: 50%; /* Center horizontally */
+            top: 50%; /* Center vertically */
+            transform: translate(-50%, -50%); /* Adjust for both horizontal and vertical centering */
+            transition: transform 0.3s ease-in-out; /* Keep animation */
+            z-index: 1001; /* Ensure it's above other modals if they overlap */
+        }
+        /* For the show animation, we apply transform directly to this content */
+        #adminConfirmModal.show .admin-confirm-modal-content {
+            transform: translate(-50%, -50%); /* No change in Y for animation, just for initial centering */
+        }
     </style>
 </head>
 <body>
@@ -205,9 +225,27 @@
                 <p class="text-base text-gray-700 mb-2">이름: <span id="detailUserName" class="font-medium"></span></p>
                 <p class="text-base text-gray-700 mb-2">선택한 입장권: <span id="detailSelectedTickets" class="font-medium"></span></p>
                 <p class="text-base text-gray-700">본인 확인 코드: <span id="detailVerificationCode" class="font-medium"></span></p>
+                <button id="userCancelReservationButton"
+                        class="mt-4 py-1 px-2 border border-transparent rounded-md shadow-sm text-xs font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition duration-150 ease-in-out whitespace-nowrap hidden">
+                    예매 취소
+                </button>
             </div>
 
             <div id="messageBoxCheck" class="message-box hidden"></div>
+        </section>
+
+        <section id="adminSection" class="p-6 bg-gray-50 rounded-lg border border-gray-200 hidden">
+            <h3 class="text-xl font-bold text-gray-800 mb-4">관리자 모드</h3>
+            <p class="text-sm text-red-600 mb-4">
+                ⚠️ 경고: 이 관리자 모드는 브라우저의 로컬 저장소에 기반하므로 보안에 취약합니다.<br>
+                실제 서비스에서는 서버와 데이터베이스를 사용해야 합니다.
+            </p>
+            <div id="messageBoxAdmin" class="message-box hidden"></div> <div id="adminReservationList" class="space-y-4 mt-4">
+                </div>
+            <button id="backToNormalButton"
+                    class="mt-6 w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-lg font-medium text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition duration-150 ease-in-out">
+                뒤로가기
+            </button>
         </section>
     </div>
 
@@ -237,6 +275,18 @@
         </div>
     </div>
 
+    <div id="adminConfirmModal" class="modal-overlay">
+        <div class="admin-confirm-modal-content">
+            <button class="modal-close-button" id="closeAdminConfirmModal">&times;</button>
+            <h4 class="text-xl font-bold text-gray-800 mb-4">예매 취소 확인</h4>
+            <p class="text-base text-gray-700 mb-4">정말로 <span id="adminConfirmCodeDisplay" class="font-semibold text-red-600"></span> 예매를 취소하시겠습니까?</p>
+            <div class="flex justify-end space-x-3">
+                <button id="confirmAdminCancel" class="py-2 px-4 rounded-md text-white bg-red-600 hover:bg-red-700 transition duration-150 ease-in-out">확인</button>
+                <button id="cancelAdminCancel" class="py-2 px-4 rounded-md text-gray-600 bg-gray-200 hover:bg-gray-300 transition duration-150 ease-in-out">취소</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // --- Common Elements ---
         const navReserve = document.getElementById('nav-reserve');
@@ -258,6 +308,7 @@
         const detailSelectedTickets = document.getElementById('detailSelectedTickets');
         const detailVerificationCode = document.getElementById('detailVerificationCode');
         const messageBoxCheck = document.getElementById('messageBoxCheck');
+        const userCancelReservationButton = document.getElementById('userCancelReservationButton'); // New: User's cancel button
 
         // --- Modal Elements ---
         const reservationModal = document.getElementById('reservationModal');
@@ -265,75 +316,74 @@
         const modalUserName = document.getElementById('modalUserName');
         const modalSelectedTickets = document.getElementById('modalSelectedTickets');
         const modalVerificationCode = document.getElementById('modalVerificationCode');
-        const confirmReservationModalButton = document.getElementById('confirmReservationModal'); // New button
+        const confirmReservationModalButton = document.getElementById('confirmReservationModal');
 
         // --- Warning Modal Elements ---
         const warningModal = document.getElementById('warningModal');
         const closeWarningModalButton = document.getElementById('closeWarningModal');
         const confirmWarningButton = document.getElementById('confirmWarning');
 
+        // --- Admin Elements ---
+        const adminSection = document.getElementById('adminSection');
+        const adminReservationList = document.getElementById('adminReservationList');
+        const backToNormalButton = document.getElementById('backToNormalButton');
+        const messageBoxAdmin = document.getElementById('messageBoxAdmin');
+
+        // --- Admin Confirmation Modal Elements (New) ---
+        const adminConfirmModal = document.getElementById('adminConfirmModal');
+        const closeAdminConfirmModalButton = document.getElementById('closeAdminConfirmModal');
+        const adminConfirmCodeDisplay = document.getElementById('adminConfirmCodeDisplay');
+        const confirmAdminCancelButton = document.getElementById('confirmAdminCancel');
+        const cancelAdminCancelButton = document.getElementById('cancelAdminCancel');
+
 
         // --- Global State Variables ---
-        let selectedSeats = []; // Array to store currently selected seat numbers by the user for reservation
-        const MAX_SEATS = 4; // Define maximum number of seats a user can select
-
-        // Load reserved seats from localStorage, or initialize as an empty array if none exist
-        // This array stores only the IDs of seats that are visually 'reserved' (red)
+        let selectedSeats = [];
+        const MAX_SEATS = 4;
         let reservedSeats = JSON.parse(localStorage.getItem('reservedSeats')) || [];
-
-        // Load all reservation details from localStorage, or initialize as an empty array
-        // This array stores objects with { name, tickets, verificationCode }
         let allReservations = JSON.parse(localStorage.getItem('allReservations')) || [];
-
-        // Flag to track if the verification code has been copied
         let isCodeCopied = false;
-
-        // Temporary storage for reservation details to pass between modals
         let tempUserName = '';
         let tempSelectedTickets = [];
         let tempVerificationCode = '';
+        let currentAdminCancellationCode = ''; // To store the code for the admin confirmation modal
 
         // --- Broadcast Channel ---
-        // Create a BroadcastChannel instance to communicate across different tabs/windows
         const reservationChannel = new BroadcastChannel('reservation_updates');
 
-        // Listen for messages on the broadcast channel
         reservationChannel.onmessage = function(event) {
             if (event.data && event.data.type === 'seats_reserved') {
-                // When a 'seats_reserved' message is received, update the reservedSeats array
-                // and regenerate the seat grid to reflect the latest state.
                 reservedSeats = event.data.reservedSeats;
-                // Only regenerate seats if the reservation section is currently visible
                 if (!reservationSection.classList.contains('hidden')) {
                     generateSeats();
+                }
+                if (!adminSection.classList.contains('hidden')) {
+                    renderAdminReservations();
+                }
+                // If the user is on the check section and their reservation was affected, update display
+                if (!checkSection.classList.contains('hidden')) {
+                    const currentCode = verificationCodeInput.value.trim().toUpperCase();
+                    const found = allReservations.find(res => res.verificationCode === currentCode);
+                    if (!found) { // If the currently displayed reservation was cancelled
+                        reservationDetails.classList.add('hidden');
+                        userCancelReservationButton.classList.add('hidden');
+                        showMessage(messageBoxCheck, '조회된 예매 정보가 취소되었습니다.', 'bg-yellow-100 text-yellow-700');
+                    }
                 }
             }
         };
 
 
         // --- Utility Functions ---
-
-        /**
-         * Displays a message in the specified message box area.
-         * @param {HTMLElement} messageBoxElement - The message box element to display the message in.
-         * @param {string} message - The message text to display.
-         * @param {string} typeClass - Tailwind CSS classes for styling the message box (e.g., 'bg-green-100 text-green-700' for success, 'bg-red-100 text-red-700' for error).
-         */
         function showMessage(messageBoxElement, message, typeClass) {
             messageBoxElement.textContent = message;
             messageBoxElement.className = `message-box ${typeClass}`;
-            messageBoxElement.classList.remove('hidden'); // Ensure the message box is visible
-            // Hide message box after 3 seconds
+            messageBoxElement.classList.remove('hidden');
             setTimeout(() => {
                 messageBoxElement.classList.add('hidden');
             }, 3000);
         }
 
-        /**
-         * Generates a random alphanumeric string of a given length.
-         * @param {number} length - The desired length of the random code.
-         * @returns {string} The generated random code.
-         */
         function generateRandomCode(length) {
             const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
             let result = '';
@@ -343,10 +393,6 @@
             return result;
         }
 
-        /**
-         * Copies text to the clipboard.
-         * @param {string} text - The text to copy.
-         */
         function copyToClipboard(text) {
             const textarea = document.createElement('textarea');
             textarea.value = text;
@@ -355,43 +401,36 @@
             try {
                 document.execCommand('copy');
                 showMessage(messageBoxReserve, '본인 확인 코드가 복사되었습니다!', 'bg-blue-100 text-blue-700');
-                isCodeCopied = true; // Set flag to true on successful copy
+                isCodeCopied = true;
             } catch (err) {
                 console.error('Failed to copy text: ', err);
                 showMessage(messageBoxReserve, '복사 실패! 수동으로 복사해주세요.', 'bg-red-100 text-red-700');
-                isCodeCopied = false; // Ensure it's false if copy fails
+                isCodeCopied = false;
             }
             document.body.removeChild(textarea);
         }
 
         // --- Reservation Section Functions ---
-
-        // Function to generate seats on the grid
         function generateSeats() {
-            const totalSeats = 100; // 10x10 grid
-            seatGrid.innerHTML = ''; // Clear any existing seats before generating
+            const totalSeats = 100;
+            seatGrid.innerHTML = '';
 
             for (let i = 1; i <= totalSeats; i++) {
                 const seat = document.createElement('div');
                 seat.classList.add('seat');
-                seat.textContent = i; // Display seat number
-                seat.setAttribute('data-seat-id', i); // Store seat ID as a data attribute
+                seat.textContent = i;
+                seat.setAttribute('data-seat-id', i);
 
-                // Check if the current seat is already reserved
                 if (reservedSeats.includes(i)) {
-                    seat.classList.add('reserved'); // Add 'reserved' class for styling (red)
-                    // Reserved seats will not have a click listener, making them unselectable
+                    seat.classList.add('reserved');
                 } else {
-                    // Only add click listener if the seat is not reserved
                     seat.addEventListener('click', () => toggleSeatSelection(seat, i));
                 }
                 seatGrid.appendChild(seat);
             }
         }
 
-        // Function to toggle seat selection (green/grey)
         function toggleSeatSelection(seatElement, seatId) {
-            // If the seat is already reserved (red), do nothing and show a message
             if (seatElement.classList.contains('reserved')) {
                 showMessage(messageBoxReserve, '이미 예매된 입장권입니다.', 'bg-red-100 text-red-700');
                 return;
@@ -400,253 +439,339 @@
             const index = selectedSeats.indexOf(seatId);
 
             if (index > -1) {
-                // If seat is currently selected, deselect it
                 selectedSeats.splice(index, 1);
                 seatElement.classList.remove('selected');
             } else {
-                // If seat is not selected, check if the maximum selection limit is reached
                 if (selectedSeats.length < MAX_SEATS) {
                     selectedSeats.push(seatId);
                     seatElement.classList.add('selected');
                 } else {
-                    // If max seats are already selected, show an error message
                     showMessage(messageBoxReserve, `최대 ${MAX_SEATS}개 입장권까지 선택 가능합니다.`, 'bg-red-100 text-red-700');
-                    return; // Stop the function execution
+                    return;
                 }
             }
-            updateSelectedSeatsDisplay(); // Update the displayed list of selected seats
+            updateSelectedSeatsDisplay();
         }
 
-        // Function to update the text displaying selected seat numbers
         function updateSelectedSeatsDisplay() {
             if (selectedSeats.length === 0) {
                 selectedSeatsDisplay.textContent = '선택한 입장권: 없음';
             } else {
-                // Sort selected seats numerically for a cleaner display
                 const sortedSeats = [...selectedSeats].sort((a, b) => a - b);
                 selectedSeatsDisplay.textContent = `선택한 입장권: ${sortedSeats.join(', ')}`;
             }
         }
 
-        // Event listener for the reservation form submission
         reservationForm.addEventListener('submit', function(event) {
-            event.preventDefault(); // Prevent the default form submission behavior (page reload)
+            event.preventDefault();
 
             const name = document.getElementById('name').value;
 
-            // Validate if the name is entered
             if (!name) {
                 showMessage(messageBoxReserve, '예매자 이름을 입력해주세요.', 'bg-red-100 text-red-700');
                 return;
             }
 
-            // Validate if at least one ticket is selected
             if (selectedSeats.length === 0) {
                 showMessage(messageBoxReserve, '입장권을 선택해주세요.', 'bg-red-100 text-red-700');
                 return;
             }
 
-            // --- IMPORTANT: Re-check seat availability just before final reservation ---
-            // Reload the latest reserved seats state from localStorage
             reservedSeats = JSON.parse(localStorage.getItem('reservedSeats')) || [];
             let conflictFound = false;
             for (const seatId of selectedSeats) {
                 if (reservedSeats.includes(seatId)) {
                     conflictFound = true;
-                    // Optionally, highlight the conflicting seat in a different color or update its state
                     const conflictingSeatElement = seatGrid.querySelector(`[data-seat-id="${seatId}"]`);
                     if (conflictingSeatElement && !conflictingSeatElement.classList.contains('reserved')) {
-                        // If it's not already red, make it red to show it's now taken
                         conflictingSeatElement.classList.add('reserved');
                         conflictingSeatElement.classList.remove('selected');
                     }
                     showMessage(messageBoxReserve, `이미 선점된 입장권 (${seatId})이 있습니다. 다시 선택해주세요.`, 'bg-red-100 text-red-700');
-                    // Clear current selection as some seats are taken
                     selectedSeats = [];
                     updateSelectedSeatsDisplay();
-                    break; // Stop checking further if one conflict is found
+                    break;
                 }
             }
 
             if (conflictFound) {
-                return; // Stop the reservation process if any selected seat is already taken
+                return;
             }
-            // --- End of real-time availability check ---
 
-
-            // Generate a unique verification code for this reservation
             const verificationCode = generateRandomCode(5);
 
-            // Add currently selected seats to the global reservedSeats array for visual display
             selectedSeats.forEach(seatId => {
-                if (!reservedSeats.includes(seatId)) { // Prevent duplicates
+                if (!reservedSeats.includes(seatId)) {
                     reservedSeats.push(seatId);
                 }
-                // Update the visual state of the reserved seats
                 const seatElement = seatGrid.querySelector(`[data-seat-id="${seatId}"]`);
                 if (seatElement) {
-                    seatElement.classList.remove('selected'); // Remove green 'selected' state
-                    seatElement.classList.add('reserved'); // Add red 'reserved' state
+                    seatElement.classList.remove('selected');
+                    seatElement.classList.add('reserved');
                 }
             });
 
-            // Create a new reservation object and add it to allReservations
             const newReservation = {
                 name: name,
-                tickets: [...selectedSeats], // Use spread to copy the array
+                tickets: [...selectedSeats],
                 verificationCode: verificationCode
             };
             allReservations.push(newReservation);
 
-            // Save the updated reservedSeats and allReservations arrays to localStorage for persistence
             localStorage.setItem('reservedSeats', JSON.stringify(reservedSeats));
             localStorage.setItem('allReservations', JSON.stringify(allReservations));
 
-            // Broadcast the update to other tabs/windows
             reservationChannel.postMessage({
                 type: 'seats_reserved',
                 reservedSeats: reservedSeats
             });
 
-            // Log reservation info to console (for demonstration purposes)
-            console.log('예매 정보:', newReservation);
-
-            // Store details in temp variables for the next modal
             tempUserName = name;
             tempSelectedTickets = [...selectedSeats];
             tempVerificationCode = verificationCode;
 
-            // Display the warning modal first
             showWarningModal();
-
-            // Do NOT reset the form or selectedSeats here yet.
-            // This will be done in the warning modal handlers.
         });
 
         // --- Reservation Check Section Functions ---
+        const ADMIN_CODE = 'HAESEONG';
 
-        // Event listener for the reservation check form submission
         checkReservationForm.addEventListener('submit', function(event) {
-            event.preventDefault(); // Prevent default form submission
+            event.preventDefault();
 
-            const inputCode = verificationCodeInput.value.trim().toUpperCase(); // Get input and convert to uppercase
+            const inputCode = verificationCodeInput.value.trim().toUpperCase();
 
             if (!inputCode) {
                 showMessage(messageBoxCheck, '본인 확인 코드를 입력해주세요.', 'bg-red-100 text-red-700');
-                reservationDetails.classList.add('hidden'); // Hide details if input is empty
+                reservationDetails.classList.add('hidden');
+                userCancelReservationButton.classList.add('hidden'); // Hide button if no code
                 return;
             }
 
-            // Find the reservation that matches the input code
+            if (inputCode === ADMIN_CODE) {
+                showAdminPanel();
+                return;
+            }
+
             const foundReservation = allReservations.find(reservation =>
                 reservation.verificationCode === inputCode
             );
 
             if (foundReservation) {
-                // If a reservation is found, display its details
                 detailUserName.textContent = foundReservation.name;
                 detailSelectedTickets.textContent = foundReservation.tickets.join(', ');
                 detailVerificationCode.textContent = foundReservation.verificationCode;
-                reservationDetails.classList.remove('hidden'); // Show the details section
+                reservationDetails.classList.remove('hidden');
+                userCancelReservationButton.classList.remove('hidden'); // Show button
+                userCancelReservationButton.dataset.code = foundReservation.verificationCode; // Set code for button
                 showMessage(messageBoxCheck, '예매 정보를 찾았습니다!', 'bg-green-100 text-green-700');
             } else {
-                // If no reservation is found, hide details and show an error message
                 reservationDetails.classList.add('hidden');
+                userCancelReservationButton.classList.add('hidden'); // Hide button
                 showMessage(messageBoxCheck, '일치하는 예매 정보가 없습니다. 코드를 확인해주세요.', 'bg-red-100 text-red-700');
             }
         });
 
-        // --- Modals Functions ---
+        // Event listener for the user's cancel button
+        userCancelReservationButton.addEventListener('click', () => {
+            const codeToCancel = userCancelReservationButton.dataset.code;
+            if (codeToCancel) {
+                showAdminConfirmModal(codeToCancel); // Reuse the admin confirmation modal
+            }
+        });
 
-        /**
-         * Displays the reservation confirmation modal.
-         * @param {string} userName - The name of the user who made the reservation.
-         * @param {Array<number>} tickets - An array of selected ticket numbers.
-         * @param {string} verificationCode - The generated verification code.
-         */
+        // --- Modals Functions ---
         function showReservationModal(userName, tickets, verificationCode) {
             modalUserName.textContent = userName;
             modalSelectedTickets.textContent = tickets.join(', ');
-            modalVerificationCode.textContent = verificationCode; // Set the verification code
-            reservationModal.classList.add('show'); // Show the modal
-            isCodeCopied = false; // Reset the flag when modal is shown for a new reservation
+            modalVerificationCode.textContent = verificationCode;
+            reservationModal.classList.add('show');
+            isCodeCopied = false;
         }
 
-        /**
-         * Displays the warning modal for uncopied verification code.
-         */
         function showWarningModal() {
             warningModal.classList.add('show');
         }
 
-        // Event listener to close the reservation confirmation modal
         closeModalButton.addEventListener('click', (event) => {
-            // Check if the modal is currently visible and the code hasn't been copied
             if (reservationModal.classList.contains('show') && !isCodeCopied && modalVerificationCode.textContent !== '') {
-                showWarningModal(); // Show the warning modal instead
-                event.stopPropagation(); // Prevent reservation modal from closing immediately
+                showWarningModal();
+                event.stopPropagation();
                 return;
             }
-            reservationModal.classList.remove('show'); // Hide the reservation modal
-            showSection(checkSection); // Redirect to check section
+            reservationModal.classList.remove('show');
+            showSection(checkSection);
         });
 
-        // Close reservation modal when clicking outside the content
         reservationModal.addEventListener('click', (event) => {
             if (event.target === reservationModal) {
-                // Check if the modal is currently visible and the code hasn't been copied
                 if (!isCodeCopied && modalVerificationCode.textContent !== '') {
-                    showWarningModal(); // Show the warning modal instead
-                    return; // Prevent reservation modal from closing
+                    showWarningModal();
+                    return;
                 }
                 reservationModal.classList.remove('show');
-                showSection(checkSection); // Redirect to check section
+                showSection(checkSection);
             }
         });
 
-        // Event listener for the new '확인' button in the reservation modal
         confirmReservationModalButton.addEventListener('click', () => {
-            reservationModal.classList.remove('show'); // Hide the reservation modal
-            showSection(checkSection); // Redirect to check section
+            reservationModal.classList.remove('show');
+            showSection(checkSection);
         });
 
-        // Event listener to close the warning modal via 'x' button
         closeWarningModalButton.addEventListener('click', () => {
-            warningModal.classList.remove('show'); // Only close the warning modal
-            // Reset form and selected seats if user closes warning without confirming
+            warningModal.classList.remove('show');
             reservationForm.reset();
             selectedSeats = [];
             updateSelectedSeatsDisplay();
-            // Clear temp variables
             tempUserName = '';
             tempSelectedTickets = [];
             tempVerificationCode = '';
         });
 
-        // Event listener to close the warning modal via '확인' button
         confirmWarningButton.addEventListener('click', () => {
-            warningModal.classList.remove('show'); // Only close the warning modal
-            // Now show the actual reservation confirmation modal
+            warningModal.classList.remove('show');
             showReservationModal(tempUserName, tempSelectedTickets, tempVerificationCode);
-            // Reset the form and selected seats, as the reservation modal is displayed
             reservationForm.reset();
             selectedSeats = [];
             updateSelectedSeatsDisplay();
-            // Clear temp variables
             tempUserName = '';
             tempSelectedTickets = [];
             tempVerificationCode = '';
         });
 
-        // Add click event listener to the verification code for copying
         modalVerificationCode.addEventListener('click', () => {
             copyToClipboard(modalVerificationCode.textContent);
+        });
+
+        // --- Admin Functions ---
+        function showAdminPanel() {
+            reservationSection.classList.add('hidden');
+            checkSection.classList.add('hidden');
+            adminSection.classList.remove('hidden');
+            renderAdminReservations();
+        }
+
+        function renderAdminReservations() {
+            adminReservationList.innerHTML = '';
+            allReservations = JSON.parse(localStorage.getItem('allReservations')) || [];
+            reservedSeats = JSON.parse(localStorage.getItem('reservedSeats')) || [];
+
+            if (allReservations.length === 0) {
+                adminReservationList.innerHTML = '<p class="text-gray-600 text-center">등록된 예매 정보가 없습니다.</p>';
+                return;
+            }
+
+            allReservations.forEach(reservation => {
+                const reservationCard = document.createElement('div');
+                reservationCard.classList.add('p-4', 'bg-white', 'rounded-lg', 'shadow-md', 'border', 'border-gray-200', 'flex', 'flex-col', 'md:flex-row', 'md:items-center', 'md:justify-between');
+                reservationCard.innerHTML = `
+                    <div class="mb-2 md:mb-0">
+                        <p class="text-lg font-semibold text-indigo-700">이름: ${reservation.name}</p>
+                        <p class="text-base text-gray-700">입장권: ${reservation.tickets.join(', ')}</p>
+                        <p class="text-base text-gray-700">코드: <span class="font-mono text-purple-700">${reservation.verificationCode}</span></p>
+                    </div>
+                    <button data-code="${reservation.verificationCode}"
+                            class="cancel-button py-1 px-2 border border-transparent rounded-md shadow-sm text-xs font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition duration-150 ease-in-out whitespace-nowrap">
+                        예매 취소
+                    </button>
+                `;
+                adminReservationList.appendChild(reservationCard);
+            });
+
+            document.querySelectorAll('.cancel-button').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const codeToCancel = event.target.dataset.code;
+                    showAdminConfirmModal(codeToCancel); // Show custom confirmation modal
+                });
+            });
+        }
+
+        function cancelReservation(verificationCode) {
+            const indexToCancel = allReservations.findIndex(res => res.verificationCode === verificationCode);
+
+            if (indexToCancel > -1) {
+                const canceledReservation = allReservations[indexToCancel];
+
+                canceledReservation.tickets.forEach(seatId => {
+                    const seatIndex = reservedSeats.indexOf(seatId);
+                    if (seatIndex > -1) {
+                        reservedSeats.splice(seatIndex, 1);
+                    }
+                });
+
+                allReservations.splice(indexToCancel, 1);
+
+                localStorage.setItem('reservedSeats', JSON.stringify(reservedSeats));
+                localStorage.setItem('allReservations', JSON.stringify(allReservations));
+
+                // Re-render admin panel if it's visible, otherwise update user's check section
+                if (!adminSection.classList.contains('hidden')) {
+                    renderAdminReservations(); // Admin panel will show updated list
+                    showMessage(messageBoxAdmin, `코드 "${verificationCode}" 예매가 취소되었습니다.`, 'bg-green-100 text-green-700 text-left text-xs');
+                } else if (!checkSection.classList.contains('hidden')) {
+                    // If user is in check section, hide the details and show a message
+                    reservationDetails.classList.add('hidden');
+                    userCancelReservationButton.classList.add('hidden');
+                    showMessage(messageBoxCheck, `코드 "${verificationCode}" 예매가 취소되었습니다.`, 'bg-green-100 text-green-700');
+                }
+                
+                // Broadcast the update to other tabs/windows
+                reservationChannel.postMessage({
+                    type: 'seats_reserved',
+                    reservedSeats: reservedSeats
+                });
+
+            } else {
+                // Determine which message box to use based on current section
+                const targetMessageBox = !adminSection.classList.contains('hidden') ? messageBoxAdmin : messageBoxCheck;
+                showMessage(targetMessageBox, `코드 "${verificationCode}"를 찾을 수 없습니다.`, 'bg-red-100 text-red-700');
+            }
+        }
+
+        backToNormalButton.addEventListener('click', () => {
+            showSection(checkSection);
+        });
+
+        // --- Admin Confirmation Modal Functions (New) ---
+        function showAdminConfirmModal(code) {
+            currentAdminCancellationCode = code; // Store the code
+            adminConfirmCodeDisplay.textContent = code; // Display the code in the modal
+            adminConfirmModal.classList.add('show');
+        }
+
+        function hideAdminConfirmModal() {
+            adminConfirmModal.classList.remove('show');
+            currentAdminCancellationCode = ''; // Clear the stored code
+        }
+
+        closeAdminConfirmModalButton.addEventListener('click', () => {
+            hideAdminConfirmModal();
+        });
+
+        cancelAdminCancelButton.addEventListener('click', () => {
+            hideAdminConfirmModal();
+            // Show message in the appropriate message box
+            const targetMessageBox = !adminSection.classList.contains('hidden') ? messageBoxAdmin : messageBoxCheck;
+            showMessage(targetMessageBox, `코드 "${currentAdminCancellationCode}" 예매 취소가 취소되었습니다.`, 'bg-yellow-100 text-yellow-700 text-left text-xs');
+        });
+
+        confirmAdminCancelButton.addEventListener('click', () => {
+            cancelReservation(currentAdminCancellationCode); // Perform cancellation
+            hideAdminConfirmModal(); // Hide modal after action
         });
 
         // --- Navigation Logic ---
         function showSection(sectionToShow) {
             reservationSection.classList.add('hidden');
             checkSection.classList.add('hidden');
+            adminSection.classList.add('hidden');
+            
+            // Hide all message boxes when switching sections
+            messageBoxReserve.classList.add('hidden');
+            messageBoxCheck.classList.add('hidden');
+            messageBoxAdmin.classList.add('hidden');
+
             sectionToShow.classList.remove('hidden');
 
             // Update active navigation link styling
@@ -658,11 +783,12 @@
             if (sectionToShow === reservationSection) {
                 navReserve.classList.add('text-indigo-600', 'hover:text-indigo-800');
                 navReserve.classList.remove('text-gray-600', 'hover:text-gray-800');
-                generateSeats(); // Re-generate seats when showing reservation section
+                generateSeats();
             } else if (sectionToShow === checkSection) {
                 navCheck.classList.add('text-indigo-600', 'hover:text-indigo-800');
                 navCheck.classList.remove('text-gray-600', 'hover:text-gray-800');
                 reservationDetails.classList.add('hidden'); // Hide details when switching to check section
+                userCancelReservationButton.classList.add('hidden'); // Hide button when switching to check section
                 verificationCodeInput.value = ''; // Clear input field
             }
         }
@@ -679,7 +805,46 @@
 
         // --- Initial Load ---
         document.addEventListener('DOMContentLoaded', () => {
-            showSection(reservationSection); // Show reservation section by default on load
+            allReservations = JSON.parse(localStorage.getItem('allReservations')) || [];
+            reservedSeats = JSON.parse(localStorage.getItem('reservedSeats')) || [];
+            showSection(reservationSection);
+        });
+
+        // --- Single Tab Enforcement (Optional, for client-side demo) ---
+        const SINGLE_TAB_KEY = 'wanghui_ticketing_single_tab';
+        let isFirstTab = false;
+
+        function enforceSingleTab() {
+            if (localStorage.getItem(SINGLE_TAB_KEY) === null || localStorage.getItem(SINGLE_TAB_KEY) === 'closed') {
+                localStorage.setItem(SINGLE_TAB_KEY, 'open');
+                isFirstTab = true;
+
+                window.addEventListener('beforeunload', () => {
+                    localStorage.setItem(SINGLE_TAB_KEY, 'closed');
+                });
+                window.addEventListener('unload', () => {
+                    localStorage.removeItem(SINGLE_TAB_KEY);
+                });
+            } else if (localStorage.getItem(SINGLE_TAB_KEY) === 'open') {
+                alert('이미 다른 탭에서 이 웹사이트가 열려 있습니다. 현재 탭을 닫습니다.');
+                window.close();
+            }
+        }
+
+        enforceSingleTab();
+
+        window.addEventListener('storage', (event) => {
+            if (event.key === SINGLE_TAB_KEY) {
+                if (event.newValue === 'open' && !isFirstTab) {
+                    alert('이미 다른 탭에서 이 웹사이트가 열려 있습니다. 현재 탭을 닫습니다.');
+                    window.close();
+                } else if (event.newValue === 'closed' || event.newValue === null) {
+                    if (!isFirstTab) {
+                        localStorage.setItem(SINGLE_TAB_KEY, 'open');
+                        isFirstTab = true;
+                    }
+                }
+            }
         });
     </script>
 </body>
