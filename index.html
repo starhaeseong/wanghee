@@ -24,7 +24,10 @@
         /* Seat grid styling */
         .seat-grid {
             display: grid;
-            grid-template-columns: repeat(10, 1fr); /* 10 columns */
+            /* Changed: Use auto-fit with minmax for responsive columns */
+            /* This will create as many columns as possible, each at least 28px wide,
+               and taking up equal fractional space if more is available. */
+            grid-template-columns: repeat(auto-fit, minmax(28px, 1fr));
             column-gap: 1px; /* Reduced horizontal gap between seats */
             row-gap: 2px;    /* Maintain vertical gap */
             width: 100%;
@@ -34,7 +37,8 @@
             background-color: #f8fafc;
         }
         .seat {
-            width: 28px; /* Fixed width for each seat */
+            /* Changed: Removed fixed width. Now it will take the width of its grid column. */
+            /* width: 28px; */
             height: 28px; /* Fixed height for each seat */
             background-color: #cbd5e1; /* Grey for unselected */
             border-radius: 4px;
@@ -176,7 +180,7 @@
             <h3 class="text-xl font-bold text-indigo-600 mb-4">우선입장권 안내</h3>
             <div class="text-gray-700">
                 <p>본 우선입장권은 왕희 페스티벌에 일반 관객보다 먼저 입장할 수 있는 티켓입니다.</p>
-                <p>좌석은 지정되어 있지 않습니다.</p>
+                <p>좌석은 지정되어 있지 않으며, 실제 입장은 입장권 번호와 무관하게 선착순으로 진행됩니다.</p>
             </div>
         </section>
 
@@ -287,6 +291,12 @@
         </div>
     </div>
 
+    <div id="loadingOverlay" class="modal-overlay">
+        <div class="modal-content !max-w-xs !py-8"> <p class="text-xl font-bold text-gray-800 text-center">예매 처리 중...</p>
+            <p class="text-sm text-gray-500 text-center mt-2">잠시만 기다려 주세요.</p>
+        </div>
+    </div>
+
     <script>
         // --- Common Elements ---
         const navReserve = document.getElementById('nav-reserve');
@@ -308,7 +318,7 @@
         const detailSelectedTickets = document.getElementById('detailSelectedTickets');
         const detailVerificationCode = document.getElementById('detailVerificationCode');
         const messageBoxCheck = document.getElementById('messageBoxCheck');
-        const userCancelReservationButton = document.getElementById('userCancelReservationButton'); // New: User's cancel button
+        const userCancelReservationButton = document.getElementById('userCancelReservationButton');
 
         // --- Modal Elements ---
         const reservationModal = document.getElementById('reservationModal');
@@ -329,12 +339,15 @@
         const backToNormalButton = document.getElementById('backToNormalButton');
         const messageBoxAdmin = document.getElementById('messageBoxAdmin');
 
-        // --- Admin Confirmation Modal Elements (New) ---
+        // --- Admin Confirmation Modal Elements ---
         const adminConfirmModal = document.getElementById('adminConfirmModal');
         const closeAdminConfirmModalButton = document.getElementById('closeAdminConfirmModal');
         const adminConfirmCodeDisplay = document.getElementById('adminConfirmCodeDisplay');
         const confirmAdminCancelButton = document.getElementById('confirmAdminCancel');
         const cancelAdminCancelButton = document.getElementById('cancelAdminCancel');
+
+        // --- Loading Overlay Elements ---
+        const loadingOverlay = document.getElementById('loadingOverlay');
 
 
         // --- Global State Variables ---
@@ -346,7 +359,7 @@
         let tempUserName = '';
         let tempSelectedTickets = [];
         let tempVerificationCode = '';
-        let currentAdminCancellationCode = ''; // To store the code for the admin confirmation modal
+        let currentAdminCancellationCode = '';
 
         // --- Broadcast Channel ---
         const reservationChannel = new BroadcastChannel('reservation_updates');
@@ -388,6 +401,20 @@
             setTimeout(() => {
                 messageBoxElement.classList.add('hidden');
             }, 3000);
+        }
+
+        /**
+         * Shows the loading overlay.
+         */
+        function showLoading() {
+            loadingOverlay.classList.add('show');
+        }
+
+        /**
+         * Hides the loading overlay.
+         */
+        function hideLoading() {
+            loadingOverlay.classList.remove('show');
         }
 
         /**
@@ -503,61 +530,13 @@
                 return;
             }
 
-            // Re-check seat availability just before final reservation
-            reservedSeats = JSON.parse(localStorage.getItem('reservedSeats')) || [];
-            let conflictFound = false;
-            for (const seatId of selectedSeats) {
-                if (reservedSeats.includes(seatId)) {
-                    conflictFound = true;
-                    const conflictingSeatElement = seatGrid.querySelector(`[data-seat-id="${seatId}"]`);
-                    if (conflictingSeatElement && !conflictingSeatElement.classList.contains('reserved')) {
-                        conflictingSeatElement.classList.add('reserved');
-                        conflictingSeatElement.classList.remove('selected');
-                    }
-                    showMessage(messageBoxReserve, `이미 선점된 입장권 (${seatId})이 있습니다. 다시 선택해주세요.`, 'bg-red-100 text-red-700');
-                    selectedSeats = [];
-                    updateSelectedSeatsDisplay();
-                    break;
-                }
-            }
-
-            if (conflictFound) {
-                return;
-            }
-
-            const verificationCode = generateRandomCode(5);
-
-            selectedSeats.forEach(seatId => {
-                if (!reservedSeats.includes(seatId)) {
-                    reservedSeats.push(seatId);
-                }
-                const seatElement = seatGrid.querySelector(`[data-seat-id="${seatId}"]`);
-                if (seatElement) {
-                    seatElement.classList.remove('selected');
-                    seatElement.classList.add('reserved');
-                }
-            });
-
-            const newReservation = {
-                name: name,
-                tickets: [...selectedSeats],
-                verificationCode: verificationCode
-            };
-            allReservations.push(newReservation);
-
-            localStorage.setItem('reservedSeats', JSON.stringify(reservedSeats));
-            localStorage.setItem('allReservations', JSON.stringify(allReservations));
-
-            reservationChannel.postMessage({
-                type: 'seats_reserved',
-                reservedSeats: reservedSeats
-            });
-
+            // Store details in temp variables for the next modal
             tempUserName = name;
             tempSelectedTickets = [...selectedSeats];
-            tempVerificationCode = verificationCode;
+            // Generate verification code here, as it's needed for the warning modal
+            tempVerificationCode = generateRandomCode(5); 
 
-            showWarningModal();
+            showWarningModal(); // Show warning modal first
         });
 
         // --- Reservation Check Section Functions ---
@@ -620,22 +599,20 @@
             warningModal.classList.add('show');
         }
 
+        // Define hideWarningModal function
+        function hideWarningModal() {
+            warningModal.classList.remove('show');
+        }
+
         closeModalButton.addEventListener('click', (event) => {
-            if (reservationModal.classList.contains('show') && !isCodeCopied && modalVerificationCode.textContent !== '') {
-                showWarningModal();
-                event.stopPropagation();
-                return;
-            }
+            // Removed the condition to show warning modal
             reservationModal.classList.remove('show');
             showSection(checkSection);
         });
 
         reservationModal.addEventListener('click', (event) => {
-            if (event.target === reservationModal) {
-                if (!isCodeCopied && modalVerificationCode.textContent !== '') {
-                    showWarningModal();
-                    return;
-                }
+            if (event.target === reservationModal) { // Check if click is on overlay, not content
+                // Removed the condition to show warning modal
                 reservationModal.classList.remove('show');
                 showSection(checkSection);
             }
@@ -647,24 +624,100 @@
         });
 
         closeWarningModalButton.addEventListener('click', () => {
-            warningModal.classList.remove('show');
+            hideWarningModal(); // Use the defined function
+            // Reset form and selected seats if user closes warning without confirming
             reservationForm.reset();
             selectedSeats = [];
             updateSelectedSeatsDisplay();
+            // Clear temp variables
             tempUserName = '';
             tempSelectedTickets = [];
             tempVerificationCode = '';
         });
 
         confirmWarningButton.addEventListener('click', () => {
-            warningModal.classList.remove('show');
-            showReservationModal(tempUserName, tempSelectedTickets, tempVerificationCode);
-            reservationForm.reset();
-            selectedSeats = [];
-            updateSelectedSeatsDisplay();
-            tempUserName = '';
-            tempSelectedTickets = [];
-            tempVerificationCode = '';
+            hideWarningModal(); // Use the defined function
+
+            showLoading(); // Show loading screen
+
+            // Simulate asynchronous check and reservation
+            setTimeout(() => {
+                // Re-check seat availability just before final reservation (real-time check)
+                // Fetch the latest reservedSeats from localStorage to ensure accuracy
+                let currentReservedSeats = JSON.parse(localStorage.getItem('reservedSeats')) || [];
+                let conflictFound = false;
+                for (const seatId of tempSelectedTickets) { // Use tempSelectedTickets for the check
+                    if (currentReservedSeats.includes(seatId)) {
+                        conflictFound = true;
+                        // Optionally, highlight the conflicting seat in a different color or update its state
+                        const conflictingSeatElement = seatGrid.querySelector(`[data-seat-id="${seatId}"]`);
+                        if (conflictingSeatElement && !conflictingSeatElement.classList.contains('reserved')) {
+                            // If it's not already red, make it red to show it's now taken
+                            conflictingSeatElement.classList.add('reserved');
+                            conflictingSeatElement.classList.remove('selected');
+                        }
+                        break; // Stop checking further if one conflict is found
+                    }
+                }
+
+                hideLoading(); // Hide loading screen
+
+                if (conflictFound) {
+                    showMessage(messageBoxReserve, '이미 선점된 좌석입니다. 다시 선택해주세요.', 'bg-red-100 text-red-700');
+                    // Clear current selection as some seats are taken
+                    selectedSeats = []; // Clear global selectedSeats
+                    updateSelectedSeatsDisplay();
+                    reservationForm.reset(); // Reset form
+                    // Clear temp variables
+                    tempUserName = '';
+                    tempSelectedTickets = [];
+                    tempVerificationCode = '';
+                    showSection(reservationSection); // Go back to initial reservation screen
+                    return; // Stop the reservation process
+                }
+
+                // If no conflict, proceed with reservation
+                // The verification code is already generated and stored in tempVerificationCode
+
+                tempSelectedTickets.forEach(seatId => { // Use tempSelectedTickets for updating reservedSeats
+                    if (!reservedSeats.includes(seatId)) { // Prevent duplicates
+                        reservedSeats.push(seatId);
+                    }
+                    // Update the visual state of the reserved seats
+                    const seatElement = seatGrid.querySelector(`[data-seat-id="${seatId}"]`);
+                    if (seatElement) {
+                        seatElement.classList.remove('selected'); // Remove green 'selected' state
+                        seatElement.classList.add('reserved'); // Add red 'reserved' state
+                    }
+                });
+
+                const newReservation = {
+                    name: tempUserName,
+                    tickets: [...tempSelectedTickets], // Use spread to copy the array
+                    verificationCode: tempVerificationCode
+                };
+                allReservations.push(newReservation);
+
+                localStorage.setItem('reservedSeats', JSON.stringify(reservedSeats));
+                localStorage.setItem('allReservations', JSON.stringify(allReservations));
+
+                reservationChannel.postMessage({
+                    type: 'seats_reserved',
+                    reservedSeats: reservedSeats
+                });
+
+                showReservationModal(tempUserName, tempSelectedTickets, tempVerificationCode); // Proceed to show confirmation modal
+
+                // Reset form and selected seats after successful reservation
+                reservationForm.reset();
+                selectedSeats = [];
+                updateSelectedSeatsDisplay();
+                // Clear temp variables
+                tempUserName = '';
+                tempSelectedTickets = [];
+                tempVerificationCode = '';
+
+            }, 1000); // Simulate 1 second loading time
         });
 
         modalVerificationCode.addEventListener('click', () => {
@@ -771,7 +824,7 @@
             showSection(checkSection);
         });
 
-        // --- Admin Confirmation Modal Functions (New) ---
+        // --- Admin Confirmation Modal Functions ---
         /**
          * Shows the custom confirmation modal for admin/user cancellation.
          * @param {string} code - The verification code of the reservation to confirm cancellation for.
@@ -816,10 +869,11 @@
             checkSection.classList.add('hidden');
             adminSection.classList.add('hidden');
             
-            // Hide all message boxes when switching sections
+            // Hide all message boxes and loading overlay when switching sections
             messageBoxReserve.classList.add('hidden');
             messageBoxCheck.classList.add('hidden');
             messageBoxAdmin.classList.add('hidden');
+            hideLoading(); // Ensure loading overlay is hidden on section switch
 
             sectionToShow.classList.remove('hidden');
 
@@ -872,13 +926,10 @@
             if (JSON.stringify(reservedSeats) !== JSON.stringify(newReservedSeats)) {
                 reservedSeats = newReservedSeats;
                 localStorage.setItem('reservedSeats', JSON.stringify(reservedSeats));
-                console.log("[Sync] reservedSeats synchronized:", reservedSeats);
                 // If the reservation section is visible, regenerate seats to reflect changes
                 if (!reservationSection.classList.contains('hidden')) {
                     generateSeats();
                 }
-            } else {
-                console.log("[Sync] reservedSeats already consistent. No update needed.");
             }
         }
 
