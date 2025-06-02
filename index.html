@@ -362,12 +362,18 @@
         let currentAdminCancellationCode = '';
 
         // --- Broadcast Channel ---
-        // BroadcastChannel 초기화 및 메시지 수신/발신 로직 재활성화
         const reservationChannel = new BroadcastChannel('reservation_updates');
 
         reservationChannel.onmessage = function(event) {
             if (event.data && event.data.type === 'seats_reserved') {
+                // BroadcastChannel로부터 받은 최신 데이터로 전역 변수 업데이트
                 reservedSeats = event.data.reservedSeats;
+                allReservations = event.data.allReservations; // allReservations도 업데이트
+
+                // localStorage도 최신 상태로 동기화 (선택 사항이지만 안전을 위해)
+                localStorage.setItem('reservedSeats', JSON.stringify(reservedSeats));
+                localStorage.setItem('allReservations', JSON.stringify(allReservations));
+
                 // 현재 예매 섹션이 활성화되어 있다면 좌석을 다시 생성하여 최신 상태 반영
                 if (!reservationSection.classList.contains('hidden')) {
                     generateSeats();
@@ -385,6 +391,12 @@
                         reservationDetails.classList.add('hidden');
                         userCancelReservationButton.classList.add('hidden');
                         showMessage(messageBoxCheck, '조회된 예매 정보가 취소되었습니다.', 'bg-yellow-100 text-yellow-700');
+                    } else {
+                        // 예약이 여전히 존재하지만 세부 정보가 변경되었을 수 있으므로 (예: 관리자로부터 티켓 취소)
+                        // 현재 확인 중인 예약의 세부 정보를 다시 렌더링
+                        detailUserName.textContent = found.name;
+                        detailSelectedTickets.textContent = found.tickets.join(', ');
+                        detailVerificationCode.textContent = found.verificationCode;
                     }
                 }
             }
