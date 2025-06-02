@@ -241,7 +241,7 @@
         <section id="adminSection" class="p-6 bg-gray-50 rounded-lg border border-gray-200 hidden">
             <h3 class="text-xl font-bold text-gray-800 mb-4">관리자 모드</h3>
             <p class="text-sm text-red-600 mb-4">
-                ⚠️ 경고: 이 관리자 모드는 브라우저의 로컬 저장소에 기반하므로 보안에 취약합니다.<br>
+               ⚠️ 경고: 이 관리자 모드는 브라우저의 로컬 저장소에 기반하므로 보안에 취약합니다.<br>
                 실제 서비스에서는 서버와 데이터베이스를 사용해야 합니다.
             </p>
             <div id="messageBoxAdmin" class="message-box hidden"></div> <div id="adminReservationList" class="space-y-4 mt-4">
@@ -362,29 +362,30 @@
         let currentAdminCancellationCode = '';
 
         // --- Broadcast Channel ---
-        const reservationChannel = new BroadcastChannel('reservation_updates');
+        // const reservationChannel = new BroadcastChannel('reservation_updates'); // Removed BroadcastChannel initialization
 
-        reservationChannel.onmessage = function(event) {
-            if (event.data && event.data.type === 'seats_reserved') {
-                reservedSeats = event.data.reservedSeats;
-                if (!reservationSection.classList.contains('hidden')) {
-                    generateSeats();
-                }
-                if (!adminSection.classList.contains('hidden')) {
-                    renderAdminReservations();
-                }
-                // If the user is on the check section and their reservation was affected, update display
-                if (!checkSection.classList.contains('hidden')) {
-                    const currentCode = verificationCodeInput.value.trim().toUpperCase();
-                    const found = allReservations.find(res => res.verificationCode === currentCode);
-                    if (!found) { // If the currently displayed reservation was cancelled
-                        reservationDetails.classList.add('hidden');
-                        userCancelReservationButton.classList.add('hidden');
-                        showMessage(messageBoxCheck, '조회된 예매 정보가 취소되었습니다.', 'bg-yellow-100 text-yellow-700');
-                    }
-                }
-            }
-        };
+        // Removed BroadcastChannel onmessage listener
+        // reservationChannel.onmessage = function(event) {
+        //     if (event.data && event.data.type === 'seats_reserved') {
+        //         reservedSeats = event.data.reservedSeats;
+        //         if (!reservationSection.classList.contains('hidden')) {
+        //             generateSeats();
+        //         }
+        //         if (!adminSection.classList.contains('hidden')) {
+        //             renderAdminReservations();
+        //         }
+        //         // If the user is on the check section and their reservation was affected, update display
+        //         if (!checkSection.classList.contains('hidden')) {
+        //             const currentCode = verificationCodeInput.value.trim().toUpperCase();
+        //             const found = allReservations.find(res => res.verificationCode === currentCode);
+        //             if (!found) { // If the currently displayed reservation was cancelled
+        //                 reservationDetails.classList.add('hidden');
+        //                 userCancelReservationButton.classList.add('hidden');
+        //                 showMessage(messageBoxCheck, '조회된 예매 정보가 취소되었습니다.', 'bg-yellow-100 text-yellow-700');
+        //             }
+        //         }
+        //     }
+        // };
 
 
         // --- Utility Functions ---
@@ -701,10 +702,11 @@
                 localStorage.setItem('reservedSeats', JSON.stringify(reservedSeats));
                 localStorage.setItem('allReservations', JSON.stringify(allReservations));
 
-                reservationChannel.postMessage({
-                    type: 'seats_reserved',
-                    reservedSeats: reservedSeats
-                });
+                // Removed BroadcastChannel postMessage
+                // reservationChannel.postMessage({
+                //     type: 'seats_reserved',
+                //     reservedSeats: reservedSeats
+                // });
 
                 showReservationModal(tempUserName, tempSelectedTickets, tempVerificationCode); // Proceed to show confirmation modal
 
@@ -807,11 +809,11 @@
                     showMessage(messageBoxCheck, `코드 "${verificationCode}" 예매가 취소되었습니다.`, 'bg-green-100 text-green-700');
                 }
                 
-                // Broadcast the update to other tabs/windows
-                reservationChannel.postMessage({
-                    type: 'seats_reserved',
-                    reservedSeats: reservedSeats
-                });
+                // Removed BroadcastChannel postMessage
+                // reservationChannel.postMessage({
+                //     type: 'seats_reserved',
+                //     reservedSeats: reservedSeats
+                // });
 
             } else {
                 // Determine which message box to use based on current section
@@ -947,6 +949,8 @@
         });
 
         // --- Single Tab Enforcement (Optional, for client-side demo) ---
+        // Removed the entire single tab enforcement system
+        /*
         const SINGLE_TAB_KEY = 'wanghui_ticketing_single_tab';
         let isFirstTab = false;
 
@@ -982,6 +986,7 @@
                 }
             }
         });
+        */
     </script>
 </body>
 </html>
